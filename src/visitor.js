@@ -71,9 +71,8 @@ import {
   REACT_LAZY_TYPE
 } from './symbols'
 
-const {
-  ReactCurrentDispatcher
-} = (React: any).__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
+const { ReactCurrentDispatcher } = (React: any)
+  .__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED
 
 // In the presence of setImmediate, i.e. on Node, we'll enable the
 // yielding behavior that gives the event loop a chance to continue
@@ -98,7 +97,8 @@ const render = (
 export const visitElement = (
   element: AbstractElement,
   queue: Frame[],
-  visitor: Visitor
+  visitor: Visitor,
+  mountLazy: boolean
 ): AbstractElement[] => {
   switch (typeOf(element)) {
     case REACT_SUSPENSE_TYPE:
@@ -138,10 +138,14 @@ export const visitElement = (
     }
 
     case REACT_LAZY_TYPE: {
-      const lazyElement = ((element: any): LazyElement)
-      const type = lazyElement.type
-      const child = mountLazyComponent(type, lazyElement.props, queue)
-      return getChildrenArray(child)
+      if (mountLazy) {
+        const lazyElement = ((element: any): LazyElement)
+        const type = lazyElement.type
+        const child = mountLazyComponent(type, lazyElement.props, queue)
+        return getChildrenArray(child)
+      } else {
+        return []
+      }
     }
 
     case REACT_MEMO_TYPE: {
@@ -185,7 +189,8 @@ const visitLoop = (
   traversalStore: Array<void | ContextEntry>,
   traversalErrorFrame: Array<null | ClassFrame>,
   queue: Frame[],
-  visitor: Visitor
+  visitor: Visitor,
+  mountLazy: boolean
 ): boolean => {
   const prevDispatcher = ReactCurrentDispatcher.current
   const start = Date.now()
@@ -195,7 +200,7 @@ const visitLoop = (
     while (traversalChildren.length > 0) {
       const element = traversalChildren[traversalChildren.length - 1].shift()
       if (element !== undefined) {
-        const children = visitElement(element, queue, visitor)
+        const children = visitElement(element, queue, visitor, mountLazy)
         traversalChildren.push(children)
         traversalMap.push(flushPrevContextMap())
         traversalStore.push(flushPrevContextStore())
@@ -244,7 +249,8 @@ const makeYieldFrame = (
 export const visit = (
   init: AbstractElement[],
   queue: Frame[],
-  visitor: Visitor
+  visitor: Visitor,
+  mountLazy: boolean
 ) => {
   const traversalChildren: AbstractElement[][] = [init]
   const traversalMap: Array<void | ContextMap> = [flushPrevContextMap()]
@@ -257,7 +263,8 @@ export const visit = (
     traversalStore,
     traversalErrorFrame,
     queue,
-    visitor
+    visitor,
+    mountLazy
   )
 
   if (hasYielded) {
@@ -272,7 +279,12 @@ export const visit = (
   }
 }
 
-export const update = (frame: Frame, queue: Frame[], visitor: Visitor) => {
+export const update = (
+  frame: Frame,
+  queue: Frame[],
+  visitor: Visitor,
+  mountLazy: boolean
+) => {
   if (frame.kind === 'frame.yield') {
     setCurrentIdentity(null)
     setCurrentContextMap(frame.contextMap)
@@ -285,7 +297,8 @@ export const update = (frame: Frame, queue: Frame[], visitor: Visitor) => {
       frame.traversalStore,
       frame.traversalErrorFrame,
       queue,
-      visitor
+      visitor,
+      mountLazy
     )
 
     if (hasYielded) {
@@ -310,7 +323,9 @@ export const update = (frame: Frame, queue: Frame[], visitor: Visitor) => {
       } else if (frame.kind === 'frame.hooks') {
         children = updateFunctionComponent(queue, frame)
       } else if (frame.kind === 'frame.lazy') {
-        children = updateLazyComponent(queue, frame)
+        if (mountLazy) {
+          children = updateLazyComponent(queue, frame)
+        }
       }
     } catch (error) {
       const errorFrame = getCurrentErrorFrame()
@@ -322,6 +337,6 @@ export const update = (frame: Frame, queue: Frame[], visitor: Visitor) => {
       ReactCurrentDispatcher.current = prevDispatcher
     }
 
-    visit(getChildrenArray(children), queue, visitor)
+    visit(getChildrenArray(children), queue, visitor, mountLazy)
   }
 }
